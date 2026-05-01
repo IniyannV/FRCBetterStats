@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d build"
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.80.7",
