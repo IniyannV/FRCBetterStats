@@ -25,6 +25,7 @@ import {
   useEventTeams,
 } from '../hooks/useTbaQueries';
 import type { TbaAlliance, TbaMatch, TbaOprs, TbaRankingRow, TbaRankingSortInfo, TbaTeam } from '../types/tba';
+import { extractTotalRankingPoints } from '../utils/nonWinRp';
 import type { NonWinRpMetrics } from '../utils/nonWinRp';
 import { formatNumber, matchLabel, recordLabel, teamDisplayName, teamNumberFromKey } from '../utils/format';
 
@@ -202,8 +203,8 @@ function RankingsTab({
     { id: 'teamName', header: 'Team Name', accessor: (row) => row.teamName },
     { id: 'record', header: 'W-L-T', accessor: (row) => row.record },
     { id: 'wins', header: 'Wins', accessor: (row) => row.wins },
-    { id: 'officialRp', header: 'Official RP', accessor: (row) => row.officialRp, render: (row) => formatNumber(row.officialRp) },
-    { id: 'nonWinRp', header: 'Non-Win RP', accessor: (row) => row.nonWinRp, render: (row) => formatNumber(row.nonWinRp) },
+    { id: 'officialRp', header: 'Official RP', accessor: (row) => row.officialRp, render: (row) => formatNumber(row.officialRp, 0) },
+    { id: 'nonWinRp', header: 'Non-Win RP', accessor: (row) => row.nonWinRp, render: (row) => formatNumber(row.nonWinRp, 0) },
     { id: 'epa', header: 'EPA', accessor: (row) => row.epa, render: (row) => formatNumber(row.epa) },
     { id: 'dpr', header: 'DPR', accessor: (row) => row.dpr, render: (row) => formatNumber(row.dpr) },
     { id: 'ccwm', header: 'CCWM', accessor: (row) => row.ccwm, render: (row) => formatNumber(row.ccwm) },
@@ -547,12 +548,10 @@ function buildRankingRows(
 
   return rankings.map((ranking) => {
     const team = teamMap.get(ranking.team_key);
-    const rankingScoreIndex = findInfoIndex(sortInfo, ['ranking score', 'rp', 'ranking']);
     const autoIndex = findInfoIndex(extraInfo, ['auto']);
     const teleopIndex = findInfoIndex(extraInfo, ['teleop', 'tele']);
     const nonWinMetric = nonWinMetricMap.get(ranking.team_key);
-    const rankingScore =
-      rankingScoreIndex >= 0 ? ranking.sort_orders?.[rankingScoreIndex] ?? null : ranking.sort_orders?.[0] ?? null;
+    const rankingScore = extractTotalRankingPoints(ranking, sortInfo);
     const officialRp = nonWinMetric?.officialRp ?? rankingScore;
     const epa = nonWinMetric?.epa ?? oprs?.oprs[ranking.team_key] ?? null;
 

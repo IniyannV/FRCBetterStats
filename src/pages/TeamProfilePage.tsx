@@ -26,6 +26,7 @@ import {
 } from '../hooks/useTbaQueries';
 import type { TbaEvent, TbaMatch, TbaTeamEventStatus } from '../types/tba';
 import { currentSeason, dateRange, locationLabel, matchLabel, teamDisplayName } from '../utils/format';
+import { extractTotalRankingPoints } from '../utils/nonWinRp';
 
 const teamTabs = [
   { id: 'events', label: 'Events' },
@@ -258,11 +259,16 @@ function TeamStatsTab({
 }) {
   const chartRows = useMemo(
     () =>
-      events.map((event) => ({
-        event: event.short_name ?? event.event_code,
-        rank: statuses[event.key]?.qual?.ranking?.rank ?? null,
-        rankingScore: statuses[event.key]?.qual?.ranking?.sort_orders?.[0] ?? null,
-      })),
+      events.map((event) => {
+        const qualStatus = statuses[event.key]?.qual;
+        const ranking = qualStatus?.ranking;
+
+        return {
+          event: event.short_name ?? event.event_code,
+          rank: ranking?.rank ?? null,
+          rankingScore: ranking ? extractTotalRankingPoints(ranking, qualStatus?.sort_order_info ?? []) : null,
+        };
+      }),
     [events, statuses],
   );
 

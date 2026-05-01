@@ -121,6 +121,6 @@ function isLikelyAverageRankingScore(value: number) {
   return value >= 0 && value <= 6;
 }
 
-function roundRankingPoints(value: number) {
-  return Math.round(value * 1000) / 1000;
+export function roundRankingPoints(value: number) {
+  return Math.round(value);
 }
