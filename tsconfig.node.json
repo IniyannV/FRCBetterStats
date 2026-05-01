@@ -6,7 +6,8 @@
     "module": "ESNext",
     "moduleResolution": "Node",
     "allowSyntheticDefaultImports": true,
-    "strict": true
+    "strict": true,
+    "noEmit": true
   },
   "include": ["vite.config.ts", "tailwind.config.ts", "postcss.config.js", "eslint.config.js"]
 }

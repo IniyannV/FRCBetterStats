@@ -25,7 +25,7 @@ import {
   useTeamMedia,
 } from '../hooks/useTbaQueries';
 import type { TbaEvent, TbaMatch, TbaTeamEventStatus } from '../types/tba';
-import { currentSeason, dateRange, locationLabel, matchLabel, recordLabel, teamDisplayName } from '../utils/format';
+import { currentSeason, dateRange, locationLabel, matchLabel, teamDisplayName } from '../utils/format';
 
 const teamTabs = [
   { id: 'events', label: 'Events' },

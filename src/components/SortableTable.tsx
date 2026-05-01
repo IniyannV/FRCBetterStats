@@ -11,12 +11,20 @@ export interface SortableColumn<T> {
   className?: string;
 }
 
+export interface SortState {
+  id: string;
+  direction: 'asc' | 'desc';
+}
+
 interface SortableTableProps<T> {
   rows: T[];
   columns: SortableColumn<T>[];
   getRowKey: (row: T) => string;
   filterPlaceholder?: string;
   csvFilename?: string;
+  initialSort?: SortState;
+  sortState?: SortState;
+  onSortChange?: (sort: SortState) => void;
 }
 
 export default function SortableTable<T>({
@@ -25,12 +33,18 @@ export default function SortableTable<T>({
   getRowKey,
   filterPlaceholder = 'Filter visible rows',
   csvFilename,
+  initialSort,
+  sortState,
+  onSortChange,
 }: SortableTableProps<T>) {
   const [filter, setFilter] = useState('');
-  const [sort, setSort] = useState<{ id: string; direction: 'asc' | 'desc' }>({
-    id: columns[0]?.id ?? '',
-    direction: 'asc',
-  });
+  const [internalSort, setInternalSort] = useState<SortState>(
+    initialSort ?? {
+      id: columns[0]?.id ?? '',
+      direction: 'asc',
+    },
+  );
+  const sort = sortState ?? internalSort;
 
   const visibleRows = useMemo(() => {
     const term = filter.trim().toLowerCase();
@@ -66,11 +80,16 @@ export default function SortableTable<T>({
   }));
 
   function toggleSort(columnId: string) {
-    setSort((current) =>
-      current.id === columnId
-        ? { id: columnId, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { id: columnId, direction: 'asc' },
-    );
+    const nextSort: SortState =
+      sort.id === columnId
+        ? { id: columnId, direction: sort.direction === 'asc' ? 'desc' : 'asc' }
+        : { id: columnId, direction: 'asc' };
+
+    if (onSortChange) {
+      onSortChange(nextSort);
+    } else {
+      setInternalSort(nextSort);
+    }
   }
 
   return (

@@ -14,8 +14,9 @@ import {
 } from 'recharts';
 import ErrorCard from '../components/ErrorCard';
 import { TableSkeleton } from '../components/LoadingSkeleton';
-import SortableTable, { SortableColumn } from '../components/SortableTable';
+import SortableTable, { SortableColumn, SortState } from '../components/SortableTable';
 import Tabs from '../components/Tabs';
+import { useNonWinRankings } from '../hooks/useNonWinRankings';
 import {
   useEventAlliances,
   useEventMatches,
@@ -23,7 +24,8 @@ import {
   useEventRankings,
   useEventTeams,
 } from '../hooks/useTbaQueries';
-import type { TbaAlliance, TbaMatch, TbaRankingRow, TbaTeam } from '../types/tba';
+import type { TbaAlliance, TbaMatch, TbaOprs, TbaRankingRow, TbaRankingSortInfo, TbaTeam } from '../types/tba';
+import type { NonWinRpMetrics } from '../utils/nonWinRp';
 import { formatNumber, matchLabel, recordLabel, teamDisplayName, teamNumberFromKey } from '../utils/format';
 
 const tabs = [
@@ -36,16 +38,24 @@ const tabs = [
 interface RankingTableRow {
   key: string;
   rank: number;
+  officialRank: number;
   teamNumber: string;
   teamName: string;
   record: string;
+  wins: number;
   rankingScore: number | null;
+  officialRp: number | null;
+  winRp: number;
+  nonWinRp: number | null;
+  epa: number | null;
   opr: number | null;
   dpr: number | null;
   ccwm: number | null;
   autoPoints: number | null;
   teleopPoints: number | null;
 }
+
+type RankingMode = 'official' | 'nonWinRP';
 
 export default function EventDetailPage() {
   const { eventKey } = useParams();
@@ -77,11 +87,15 @@ export default function EventDetailPage() {
             void teamsQuery.refetch();
             void rankingsQuery.refetch();
             void oprsQuery.refetch();
+            void matchesQuery.refetch();
           }}
           rankings={rankingsQuery.data?.rankings ?? []}
           sortInfo={rankingsQuery.data?.sort_order_info ?? []}
           extraInfo={rankingsQuery.data?.extra_stats_info ?? []}
           oprs={oprsQuery.data}
+          matches={matchesQuery.data ?? []}
+          matchesLoading={matchesQuery.isLoading}
+          matchesError={matchesQuery.isError}
         />
       ) : null}
 
@@ -137,6 +151,9 @@ function RankingsTab({
   sortInfo,
   extraInfo,
   oprs,
+  matches,
+  matchesLoading,
+  matchesError,
   isLoading,
   isError,
   refetch,
@@ -144,20 +161,31 @@ function RankingsTab({
   eventKey?: string;
   teams: TbaTeam[];
   rankings: TbaRankingRow[];
-  sortInfo: { name: string }[];
-  extraInfo: { name: string }[];
-  oprs?: { oprs: Record<string, number>; dprs: Record<string, number>; ccwms: Record<string, number> };
+  sortInfo: Pick<TbaRankingSortInfo, 'name'>[];
+  extraInfo: Pick<TbaRankingSortInfo, 'name'>[];
+  oprs?: TbaOprs;
+  matches: TbaMatch[];
+  matchesLoading: boolean;
+  matchesError: boolean;
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
 }) {
+  const [rankingMode, setRankingMode] = useState<RankingMode>('official');
+  const [sortByMode, setSortByMode] = useState<Record<RankingMode, SortState>>({
+    official: { id: 'rank', direction: 'asc' },
+    nonWinRP: { id: 'rank', direction: 'asc' },
+  });
+  const nonWinMetrics = useNonWinRankings({ rankings, matches, sortInfo, oprs });
+  const nonWinReady = !matchesLoading && !matchesError;
   const rows = useMemo(
-    () => buildRankingRows(rankings, teams, sortInfo, extraInfo, oprs),
-    [extraInfo, oprs, rankings, sortInfo, teams],
+    () => buildRankingRows(rankings, teams, sortInfo, extraInfo, oprs, nonWinMetrics, rankingMode, nonWinReady),
+    [extraInfo, nonWinMetrics, nonWinReady, oprs, rankingMode, rankings, sortInfo, teams],
   );
 
   if (isLoading) return <TableSkeleton columns={10} />;
-  if (isError) return <ErrorCard onRetry={refetch} />;
+  if (isError || (rankingMode === 'nonWinRP' && matchesError)) return <ErrorCard onRetry={refetch} />;
+  if (rankingMode === 'nonWinRP' && matchesLoading) return <TableSkeleton columns={12} />;
 
   const columns: SortableColumn<RankingTableRow>[] = [
     { id: 'rank', header: 'Rank', accessor: (row) => row.rank },
@@ -173,8 +201,10 @@ function RankingsTab({
     },
     { id: 'teamName', header: 'Team Name', accessor: (row) => row.teamName },
     { id: 'record', header: 'W-L-T', accessor: (row) => row.record },
-    { id: 'rankingScore', header: 'Ranking Score', accessor: (row) => row.rankingScore, render: (row) => formatNumber(row.rankingScore) },
-    { id: 'opr', header: 'OPR', accessor: (row) => row.opr, render: (row) => formatNumber(row.opr) },
+    { id: 'wins', header: 'Wins', accessor: (row) => row.wins },
+    { id: 'officialRp', header: 'Official RP', accessor: (row) => row.officialRp, render: (row) => formatNumber(row.officialRp) },
+    { id: 'nonWinRp', header: 'Non-Win RP', accessor: (row) => row.nonWinRp, render: (row) => formatNumber(row.nonWinRp) },
+    { id: 'epa', header: 'EPA', accessor: (row) => row.epa, render: (row) => formatNumber(row.epa) },
     { id: 'dpr', header: 'DPR', accessor: (row) => row.dpr, render: (row) => formatNumber(row.dpr) },
     { id: 'ccwm', header: 'CCWM', accessor: (row) => row.ccwm, render: (row) => formatNumber(row.ccwm) },
     { id: 'autoPoints', header: 'Auto Points', accessor: (row) => row.autoPoints, render: (row) => formatNumber(row.autoPoints) },
@@ -187,13 +217,54 @@ function RankingsTab({
   ];
 
   return (
-    <SortableTable
-      rows={rows}
-      columns={columns}
-      getRowKey={(row) => row.key}
-      filterPlaceholder="Filter by team, rank, record, or stat"
-      csvFilename={`${eventKey ?? 'event'}-rankings.csv`}
-    />
+    <div className="space-y-4">
+      <RankingModeToggle rankingMode={rankingMode} onChange={setRankingMode} />
+      <SortableTable
+        rows={rows}
+        columns={columns}
+        getRowKey={(row) => row.key}
+        filterPlaceholder="Filter by team, rank, record, or stat"
+        csvFilename={`${eventKey ?? 'event'}-${rankingMode === 'official' ? 'official' : 'non-win-rp'}-rankings.csv`}
+        sortState={sortByMode[rankingMode]}
+        onSortChange={(sort) => setSortByMode((current) => ({ ...current, [rankingMode]: sort }))}
+      />
+    </div>
+  );
+}
+
+function RankingModeToggle({
+  rankingMode,
+  onChange,
+}: {
+  rankingMode: RankingMode;
+  onChange: (rankingMode: RankingMode) => void;
+}) {
+  const options: { id: RankingMode; label: string }[] = [
+    { id: 'official', label: 'Official Rankings' },
+    { id: 'nonWinRP', label: 'Non-Win RP Rankings' },
+  ];
+
+  return (
+    <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      {options.map((option) => {
+        const active = rankingMode === option.id;
+
+        return (
+          <button
+            key={option.id}
+            type="button"
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+              active
+                ? 'bg-frc-blue text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+            }`}
+            onClick={() => onChange(option.id)}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -464,25 +535,40 @@ function ChartPanel({ title, children }: { title: string; children: React.ReactN
 function buildRankingRows(
   rankings: TbaRankingRow[],
   teams: TbaTeam[],
-  sortInfo: { name: string }[],
-  extraInfo: { name: string }[],
-  oprs?: { oprs: Record<string, number>; dprs: Record<string, number>; ccwms: Record<string, number> },
+  sortInfo: Pick<TbaRankingSortInfo, 'name'>[],
+  extraInfo: Pick<TbaRankingSortInfo, 'name'>[],
+  oprs?: TbaOprs,
+  nonWinMetrics: NonWinRpMetrics[] = [],
+  rankingMode: RankingMode = 'official',
+  nonWinReady = true,
 ): RankingTableRow[] {
   const teamMap = new Map(teams.map((team) => [team.key, team]));
+  const nonWinMetricMap = new Map(nonWinMetrics.map((metric) => [metric.teamKey, metric]));
 
   return rankings.map((ranking) => {
     const team = teamMap.get(ranking.team_key);
     const rankingScoreIndex = findInfoIndex(sortInfo, ['ranking score', 'rp', 'ranking']);
     const autoIndex = findInfoIndex(extraInfo, ['auto']);
     const teleopIndex = findInfoIndex(extraInfo, ['teleop', 'tele']);
+    const nonWinMetric = nonWinMetricMap.get(ranking.team_key);
+    const rankingScore =
+      rankingScoreIndex >= 0 ? ranking.sort_orders?.[rankingScoreIndex] ?? null : ranking.sort_orders?.[0] ?? null;
+    const officialRp = nonWinMetric?.officialRp ?? rankingScore;
+    const epa = nonWinMetric?.epa ?? oprs?.oprs[ranking.team_key] ?? null;
 
     return {
       key: ranking.team_key,
-      rank: ranking.rank,
+      rank: rankingMode === 'nonWinRP' && nonWinReady ? nonWinMetric?.nonWinRank ?? ranking.rank : ranking.rank,
+      officialRank: ranking.rank,
       teamNumber: teamNumberFromKey(ranking.team_key),
       teamName: teamDisplayName(team),
       record: recordLabel(ranking.record),
-      rankingScore: rankingScoreIndex >= 0 ? ranking.sort_orders?.[rankingScoreIndex] ?? null : ranking.sort_orders?.[0] ?? null,
+      wins: ranking.record?.wins ?? 0,
+      rankingScore,
+      officialRp,
+      winRp: nonWinReady ? nonWinMetric?.winRp ?? 0 : 0,
+      nonWinRp: nonWinReady ? nonWinMetric?.nonWinRp ?? null : null,
+      epa,
       opr: oprs?.oprs[ranking.team_key] ?? null,
       dpr: oprs?.dprs[ranking.team_key] ?? null,
       ccwm: oprs?.ccwms[ranking.team_key] ?? null,
